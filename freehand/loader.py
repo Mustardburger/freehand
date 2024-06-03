@@ -4,11 +4,12 @@ import json
 
 import h5py
 import numpy as np
-
+import os
+import line_profiler
 
 class SSFrameDataset():  # Subject-Scan frame loader
 
-    def __init__(self, filename_h5, indices_in_use=None, num_samples=2, sample_range=None):
+    def __init__(self, filename_h5, data_path="/content/drive/MyDrive/AI-ML-DL/DAAD/data/train_part1", indices_in_use=None, num_samples=2, sample_range=None):
 
         """
         :param filename_h5, file path
@@ -26,6 +27,7 @@ class SSFrameDataset():  # Subject-Scan frame loader
         self.file = h5py.File(self.filename, 'r')
         self.frame_size = self.file['frame_size'][()]
         self.num_frames = self.file['num_frames'][()]
+        self.data_path = data_path
         
         if indices_in_use is None:
             self.indices_in_use = [(i_sub,i_scn) for i_sub in range(self.num_frames.shape[0]) for i_scn in range(self.num_frames.shape[1])]                    
@@ -96,7 +98,7 @@ class SSFrameDataset():  # Subject-Scan frame loader
     def __len__(self):
         return self.num_indices
     
-
+    #@profile
     def __getitem__(self, idx):
         indices = self.indices_in_use[idx]
         if self.num_samples == -1:  # sample all available frames, for validation
@@ -104,12 +106,21 @@ class SSFrameDataset():  # Subject-Scan frame loader
         else:
             i_frames = self.frame_sampler(self.num_frames[indices])
 
-        frames = [self.file['/sub{:03d}_scan{:02d}_frame{:04d}'.format(indices[0],indices[1],ii)] for ii in i_frames]
-        tforms = [self.file['/sub{:03d}_scan{:02d}_tform{:04d}'.format(indices[0],indices[1],ii)] for ii in i_frames]
-        tforms_inv = [self.file['/sub{:03d}_scan{:02d}_tform_inv{:04d}'.format(indices[0],indices[1],ii)] for ii in i_frames]
-
-        return np.stack(frames,axis=0), np.stack(tforms,axis=0), np.stack(tforms_inv,axis=0)
-    
+        idx_indivi, idx_scan = indices[0], indices[1]
+        scan_names = sorted(os.listdir(f"{self.data_path}/{idx_indivi:03}"))
+        h5ad_obj = h5py.File(f"{self.data_path}/{idx_indivi:03}/{scan_names[idx_scan]}")
+        #frames = h5ad_obj['frames'][()][i_frames]
+        frames = np.array([h5ad_obj['frames'][i] for i in i_frames])
+        tforms = h5ad_obj['tforms'][()][i_frames]
+        tforms_inv = np.linalg.inv(h5ad_obj['tforms'][()][i_frames])
+        h5ad_obj.close()
+        
+        #frames = [self.file['/sub{:03d}_scan{:02d}_frame{:04d}'.format(indices[0],indices[1],ii)] for ii in i_frames]
+        #tforms = [self.file['/sub{:03d}_scan{:02d}_tform{:04d}'.format(indices[0],indices[1],ii)] for ii in i_frames]
+        #tforms_inv = [self.file['/sub{:03d}_scan{:02d}_tform_inv{:04d}'.format(indices[0],indices[1],ii)] for ii in i_frames]
+        #return np.stack(frames,axis=0), np.stack(tforms,axis=0), np.stack(tforms_inv,axis=0)
+        return frames, tforms, tforms_inv
+        #return (indices, i_frames)
 
     def frame_sampler(self, n):
         n0 = random.randint(0,n-self.sample_range)  # sample the start index for the range
@@ -138,6 +149,4 @@ class SSFrameDataset():  # Subject-Scan frame loader
                 indices_in_use = [tuple(ids) for ids in obj['indices_in_use']], # convert to tuples from json string
                 num_samples    = obj['num_samples'], 
                 sample_range   = obj['sample_range']
-                )
-        
-            
+            )
