@@ -1,34 +1,29 @@
-
 import os
-
+import sys
 import torch
 from torchvision.models import efficientnet_b1
-# from torchvision.models import efficientnet_b0, efficientnet_b1, efficientnet_b2, efficientnet_b3, efficientnet_b4, efficientnet_b5, efficientnet_b6, efficientnet_b7
-# from torchvision.models import resnet18, resnet34, resnet50, resnet101, resnet152
 
 from freehand.loader import SSFrameDataset
 from freehand.network import build_model
 from freehand.loss import PointDistance
-from freehand.data.calib import read_calib_matrices
+from freehand.calib import read_calib_matrices_v1and2
 from freehand.transform import LabelTransform, PredictionTransform, ImageTransform
 from freehand.utils import pair_samples, reference_image_points, type_dim
-
 
 
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 RESAMPLE_FACTOR = 4
-FILENAME_CALIB = "data/calib_matrix.csv"
-FILENAME_FRAMES = os.path.join(os.path.expanduser("~"), "workspace", 'frames_res{}'.format(RESAMPLE_FACTOR)+".h5")
-
-
+FILENAME_CALIB = "/content/drive/MyDrive/AI-ML-DL/DAAD/data/calib_matrix_competition.csv"
+FILENAME_FRAMES = "/content/drive/MyDrive/AI-ML-DL/DAAD/data/metadata_train_part1.h5"
 
 ## settings
 # training
-MINIBATCH_SIZE = 32
+MINIBATCH_SIZE = 4
 LEARNING_RATE = 1e-3
-NUM_EPOCHS = int(1e6)
+NUM_EPOCHS = 1
+
 # algorithm
 PRED_TYPE = "transform"  # {"transform", "parameter", "point"}
 LABEL_TYPE = "point"  # {"point", "parameter"}
@@ -42,19 +37,20 @@ SAVE_PATH = "results"
 if not os.path.exists(SAVE_PATH):
     os.makedirs(SAVE_PATH)
 
+
 dataset_all = SSFrameDataset(
-    filename_h5=FILENAME_FRAMES, 
-    num_samples=NUM_SAMPLES, 
-    sample_range=SAMPLE_RANGE
+    filename_h5=FILENAME_FRAMES,
+    num_samples=NUM_SAMPLES,
     )
 
 
 ## setup for cross-validation
 dset_folds = dataset_all.partition_by_ratio(
-    ratios = [1]*5, 
-    randomise=True, 
+    ratios = [1]*5,
+    randomise=True,
     subject_level=False
     )
+
 for (idx, ds) in enumerate(dset_folds):
     ds.write_json(os.path.join(SAVE_PATH,"fold_{:02d}.json".format(idx)))  # see test.py for file reading
 
@@ -63,21 +59,21 @@ dset_val = dset_folds[4]
 
 train_loader = torch.utils.data.DataLoader(
     dset_train,
-    batch_size=MINIBATCH_SIZE, 
+    batch_size=MINIBATCH_SIZE,
     shuffle=True,
     num_workers=2
     )
 
 val_loader = torch.utils.data.DataLoader(
     dset_val,
-    batch_size=1, 
+    batch_size=1,
     shuffle=False,
     num_workers=1
     )
 
 
 ## loss
-tform_calib = torch.tensor(read_calib_matrices(filename_calib=FILENAME_CALIB, resample_factor=RESAMPLE_FACTOR), device=device)
+tform_calib = torch.tensor(read_calib_matrices_v1and2(filename_calib=FILENAME_CALIB, resample_factor=RESAMPLE_FACTOR), device=device)
 data_pairs = pair_samples(NUM_SAMPLES, NUM_PRED).to(device)
 if (PRED_TYPE=="point") or (LABEL_TYPE=="point"):
     image_points = reference_image_points(dset_train.frame_size,2).to(device)
@@ -89,16 +85,16 @@ else:
     label_dim = type_dim(LABEL_TYPE)
 
 transform_label = LabelTransform(
-    LABEL_TYPE, 
-    pairs=data_pairs, 
-    image_points=image_points, 
+    LABEL_TYPE,
+    pairs=data_pairs,
+    image_points=image_points,
     tform_image_to_tool=tform_calib
     )
 transform_prediction = PredictionTransform(
-    PRED_TYPE, 
-    LABEL_TYPE, 
-    num_pairs=data_pairs.shape[0], 
-    image_points=image_points, 
+    PRED_TYPE,
+    LABEL_TYPE,
+    num_pairs=data_pairs.shape[0],
+    image_points=image_points,
     tform_image_to_tool=tform_calib
     )
 transform_image = ImageTransform(mean=32, std=32)
@@ -113,8 +109,8 @@ elif LABEL_TYPE == "parameter":
 
 ## network
 model = build_model(
-    efficientnet_b1, 
-    in_frames = NUM_SAMPLES, 
+    efficientnet_b1,
+    in_frames = NUM_SAMPLES,
     out_dim = pred_dim
     ).to(device)
 
