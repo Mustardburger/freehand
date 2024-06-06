@@ -9,7 +9,7 @@ import line_profiler
 
 class SSFrameDataset():  # Subject-Scan frame loader
 
-    def __init__(self, filename_h5, data_path="/content/drive/MyDrive/AI-ML-DL/DAAD/data/train_part1", indices_in_use=None, num_samples=2, sample_range=None):
+    def __init__(self, filename_h5, data_path="/change/to/your/path", indices_in_use=None, num_samples=2, sample_range=None):
 
         """
         :param filename_h5, file path
